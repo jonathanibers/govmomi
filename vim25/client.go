@@ -20,6 +20,7 @@ import (
 	"context"
 	"encoding/json"
 
+	"github.com/vmware/govmomi/sts"
 	"github.com/vmware/govmomi/vim25/methods"
 	"github.com/vmware/govmomi/vim25/soap"
 	"github.com/vmware/govmomi/vim25/types"
@@ -30,7 +31,7 @@ import (
 // client has been created). This means the client can be reused after
 // serialization without performing additional requests for initialization.
 type Client struct {
-	*soap.Client
+	*sts.Client
 
 	ServiceContent types.ServiceContent
 
@@ -55,7 +56,7 @@ func NewClient(ctx context.Context, rt soap.RoundTripper) (*Client, error) {
 
 	// Set client if it happens to be a soap.Client
 	if sc, ok := rt.(*soap.Client); ok {
-		c.Client = sc
+		c.Client.Client = sc
 	}
 
 	return &c, nil
@@ -67,13 +68,13 @@ func (c *Client) RoundTrip(ctx context.Context, req, res soap.HasFault) error {
 }
 
 type marshaledClient struct {
-	SoapClient     *soap.Client
+	StsClient      *sts.Client
 	ServiceContent types.ServiceContent
 }
 
 func (c *Client) MarshalJSON() ([]byte, error) {
 	m := marshaledClient{
-		SoapClient:     c.Client,
+		StsClient:      c.Client,
 		ServiceContent: c.ServiceContent,
 	}
 
@@ -89,9 +90,9 @@ func (c *Client) UnmarshalJSON(b []byte) error {
 	}
 
 	*c = Client{
-		Client:         m.SoapClient,
+		Client:         m.StsClient,
 		ServiceContent: m.ServiceContent,
-		RoundTripper:   m.SoapClient,
+		RoundTripper:   m.StsClient.Client,
 	}
 
 	return nil

@@ -63,6 +63,7 @@ import (
 
 	"github.com/vmware/govmomi/property"
 	"github.com/vmware/govmomi/session"
+	"github.com/vmware/govmomi/sts"
 	"github.com/vmware/govmomi/vim25"
 	"github.com/vmware/govmomi/vim25/soap"
 	"github.com/vmware/govmomi/vim25/types"
@@ -70,6 +71,12 @@ import (
 
 type Client struct {
 	*vim25.Client
+
+	SessionManager *session.Manager
+}
+
+type StsClient struct {
+	*sts.Client
 
 	SessionManager *session.Manager
 }
@@ -95,6 +102,52 @@ func NewClient(ctx context.Context, u *url.URL, insecure bool) (*Client, error) 
 			return nil, err
 		}
 	}
+
+	return c, nil
+}
+
+
+// NewClient creates a new client from a URL. The client authenticates with the
+// server with username/password before returning if the URL contains user information.
+func NewClientWithToken(ctx context.Context, u *url.URL, insecure bool) (*Client, error) {
+	soapClient := soap.NewClient(u, insecure)
+	vimClient, err := vim25.NewClient(ctx, soapClient)
+	stsClient, err := sts.NewClient(ctx, vimClient)
+	if err != nil {
+		return nil, err
+	}
+
+	sc := &StsClient{
+		Client:         stsClient,
+		SessionManager: session.NewManager(vimClient),
+	}
+
+	c := &Client{
+		Client:         vimClient,
+		SessionManager: session.NewManager(vimClient),
+	}
+
+	securityHeader := sts.SecurityHeaderType{}
+
+	_, err = sc.Issue(ctx, securityHeader)
+
+	if err != nil {
+		return nil, err
+	}
+
+	err = sc.LoginByToken(ctx)
+
+	if err != nil {
+		return nil, err
+	}
+
+	// Only login if the URL contains user information.
+	//if u.User != nil {
+	//	err = c.LoginByToken(ctx)
+	//	if err != nil {
+	//		return nil, err
+	//	}
+	//}
 
 	return c, nil
 }
@@ -127,6 +180,10 @@ func NewClientWithCertificate(ctx context.Context, u *url.URL, insecure bool, ce
 // Login dispatches to the SessionManager.
 func (c *Client) Login(ctx context.Context, u *url.Userinfo) error {
 	return c.SessionManager.Login(ctx, u)
+}
+
+func (c *StsClient) LoginByToken(ctx context.Context) error {
+	return c.SessionManager.LoginByToken(ctx)
 }
 
 // Login dispatches to the SessionManager.
